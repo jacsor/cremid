@@ -1,7 +1,7 @@
 Closely Related Mixture Distributions
 ================================
 
-This package fits the CREMID, an algorithm for comparison across 
+This package fits CREMID, an algorithm for comparison across 
 closely related mixture distributions. 
 
 ### Install
