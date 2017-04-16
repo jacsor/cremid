@@ -1,0 +1,5 @@
+useDynLib(cremid)
+import(RcppArmadillo)
+importFrom(Rcpp, evalCpp)
+
+export(Fit, PlotDiff, Calibrate)
