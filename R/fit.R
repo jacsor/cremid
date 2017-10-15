@@ -47,11 +47,11 @@ Fit <- function(Y, C, prior = NULL, mcmc = NULL, state = NULL)
   {
     prior = list( K = 10,
                   epsilon_range =  c(10^-10, 1),
-                  m_2 = colMeans(Y),
+                  m_0 = colMeans(Y),
                   nu_2 = p+2, 
                   nu_1 = p+2,
                   Psi_2 = cov(Y),
-                  S_2 = 100*cov(Y),
+                  V_0 = 100*cov(Y),
                   tau_k0 = c(4,4),
                   tau_alpha = c(1,1),
                   tau_rho = c(0.5,0.5),
@@ -59,7 +59,8 @@ Fit <- function(Y, C, prior = NULL, mcmc = NULL, state = NULL)
                   tau_varphi = c(0.5,0.5),
                   point_masses_varphi = c(0.0, 0.0),
                   merge_step = TRUE,
-                  merge_par = 0.1
+                  merge_par = 0.1,
+                  shared_alpha = TRUE
     )
   }
   else
@@ -68,16 +69,16 @@ Fit <- function(Y, C, prior = NULL, mcmc = NULL, state = NULL)
       prior$K = 10
     if(is.null(prior$epsilon_range))
       prior$epsilon_range =  c(10^-10, 1)
-    if(is.null(prior$m_2))
-      prior$m_2 = colMeans(Y)
+    if(is.null(prior$m_0))
+      prior$m_0 = colMeans(Y)
     if(is.null(prior$nu_2))
       prior$nu_2 = p+2
     if(is.null(prior$nu_1))
       prior$nu_1 = p+2
     if(is.null(prior$Psi_2))
       prior$Psi_2 = cov(Y)
-    if(is.null(prior$S_2))
-      prior$S_2 = 100*cov(Y)
+    if(is.null(prior$V_0))
+      prior$V_0 = 100*cov(Y)
     if(is.null(prior$tau_k0))
       prior$tau_k0 = c(4,4)
     if(is.null(prior$tau_alpha))
@@ -94,6 +95,8 @@ Fit <- function(Y, C, prior = NULL, mcmc = NULL, state = NULL)
       prior$merge_step = TRUE
     if(is.null(prior$merge_par))
       prior$merge_par = 0.1
+    if (is.null(prior$shared_alpha))
+      prior$shared_alpha = TRUE
   }
   
   if(is.null(mcmc))

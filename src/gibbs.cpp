@@ -26,11 +26,11 @@ MCMC::MCMC( mat Y,
       num_display = Rcpp::as<int>(mcmc["ndisplay"]);    
 
       epsilon_range = Rcpp::as<vec>(prior["epsilon_range"]);
-      m_2 = Rcpp::as<vec>(prior["m_2"]);
+      m_0 = Rcpp::as<vec>(prior["m_0"]);
       nu_2 = Rcpp::as<double>(prior["nu_2"]);    
       nu_1 = Rcpp::as<double>(prior["nu_1"]);    
       Psi_2 = Rcpp::as<mat>(prior["Psi_2"]);
-      inv_S_2 = inv(Rcpp::as<mat>(prior["S_2"]));
+      inv_V_0 = inv(Rcpp::as<mat>(prior["V_0"]));
       tau_k0 = Rcpp::as<vec>(prior["tau_k0"]);
       tau_alpha = Rcpp::as<vec>(prior["tau_alpha"]);
       tau_rho = Rcpp::as<vec>(prior["tau_rho"]);
@@ -38,6 +38,7 @@ MCMC::MCMC( mat Y,
       tau_varphi = Rcpp::as<vec>(prior["tau_varphi"]);
       varphi_pm = Rcpp::as<vec>(prior["point_masses_varphi"]);
       merge_step = Rcpp::as<bool>(prior["merge_step"]);
+      shared_alpha = Rcpp::as<bool>(prior["shared_alpha"]);
       merge_par = Rcpp::as<double>(prior["merge_par"]);
       Z_input = Rcpp::as<uvec>(state["Z"]);
       truncation_type = Rcpp::as<std::string>(prior["truncation_type"]);
@@ -46,7 +47,7 @@ MCMC::MCMC( mat Y,
       length_chain =  num_iter/num_thin;
       saveVarphi.set_size(length_chain);
       saveRho.set_size(length_chain);
-      saveAlpha.set_size(length_chain);
+      saveAlpha.set_size(length_chain, 2);
       saveW.set_size(J,K,length_chain);
       saveK0.set_size(length_chain);
       saveEpsilon.set_size(length_chain);
@@ -84,7 +85,6 @@ void MCMC::main_loop(Rcpp::List state)
   uvec Z = Z_input;
 
   /* --- parameters --- */
-  
   // probability of misalignment and shift    
   double varphi = tau_varphi(0)/sum(tau_varphi);
   // proportion of the common mixture weights
@@ -100,10 +100,20 @@ void MCMC::main_loop(Rcpp::List state)
   int epsilon_tot = 100;
   // mass parameter for the dirichlet prior on the mixture weights
   double alpha = 1;
+  double alpha_0 = 1;
+  double alpha_1 = 1;
   double alpha_old = alpha;
+  double alpha_old_0 = alpha_0;
+  double alpha_old_1 = alpha_1;
   double alpha_par  = sqrt(K);
+  double alpha_par_0  = sqrt(K);
+  double alpha_par_1  = sqrt(K);
   double alpha_count = 0; 
   int alpha_tot = 100; 
+  double alpha_count_0 = 0; 
+  int alpha_tot_0 = 100;
+  double alpha_count_1 = 0; 
+  int alpha_tot_1 = 100; 
   // mixture weights
   mat logW(J, K); logW.fill( log(1.0/K));
   // mean \mu_{j,k}
@@ -191,36 +201,90 @@ void MCMC::main_loop(Rcpp::List state)
       }
     }
                     
-    alpha_old = alpha;  
-    alpha = UpdateAlpha( alpha, N, R, alpha_par );
-    if( it <= num_burnin )
-    {
-      if( alpha != alpha_old )
-        alpha_count++;
-           
-      if( (it+1)  % alpha_tot == 0)
+    if (shared_alpha == true) {
+      alpha_old = alpha;  
+      alpha = UpdateAlpha( alpha, N, R, alpha_par );
+      if( it <= num_burnin )
       {
-        if( alpha_count < 30 )
-          alpha_par *= 1.1;
-        if( alpha_count > 50 )  
-          alpha_par *= 0.9;
-        alpha_count = 0;        
-      }      
-    }  
-    else
-    {
         if( alpha != alpha_old )
           alpha_count++;
-    }    
+        
+        if( (it+1)  % alpha_tot == 0)
+        {
+          if( alpha_count < 30 )
+            alpha_par *= 1.1;
+          if( alpha_count > 50 )  
+            alpha_par *= 0.9;
+          alpha_count = 0;        
+        }      
+      }  
+      else
+      {
+        if( alpha != alpha_old )
+          alpha_count++;
+      }
+      alpha_0 = alpha;
+      alpha_1 = alpha;
+    } else {
+      
+      alpha_old_0 = alpha_0;  
+      alpha_0 = UpdateAlpha0( alpha_0, N, R, alpha_par_0 );
+      if( it <= num_burnin )
+      {
+        if( alpha_0 != alpha_old_0 )
+          alpha_count_0++;
+        
+        if( (it+1)  % alpha_tot_0 == 0)
+        {
+          if( alpha_count_0 < 30 )
+            alpha_par_0 *= 1.1;
+          if( alpha_count_0 > 50 )  
+            alpha_par_0 *= 0.9;
+          alpha_count_0 = 0;        
+        }      
+      }  
+      else
+      {
+        if( alpha_0 != alpha_old_0 )
+          alpha_count_0++;
+      }
+      
+      
+      alpha_old_1 = alpha_1;  
+      alpha_1 = UpdateAlpha1( alpha_1, N, R, alpha_par_1 );
+      if( it <= num_burnin )
+      {
+        if( alpha_1 != alpha_old_1 )
+          alpha_count_1++;
+        
+        if( (it+1)  % alpha_tot_1 == 0)
+        {
+          if( alpha_count_1 < 30 )
+            alpha_par_1 *= 1.1;
+          if( alpha_count_1 > 50 )  
+            alpha_par_1 *= 0.9;
+          alpha_count_1 = 0;        
+        }      
+      }  
+      else
+      {
+        if( alpha_1 != alpha_old_1 )
+          alpha_count_1++;
+      }
+      
+      
+      
+    }                
+
     
     if(truncation_type == "adaptive")
-      R = UpdateR(R, N, eta, alpha);
+      R = UpdateR(R, N, eta, alpha_0, alpha_1);
     else
-      R = swap_step(R, N, tau_rho, alpha);
+      R = swap_step(R, N, tau_rho, alpha_0, alpha_1);
         
     rho = updateRho( N, R);
     
-    logW = UpdateLogWs( N, R, rho, alpha );  
+    logW = UpdateLogWs( N, R, rho, alpha_0, alpha_1 );  
     
     List tempZ = UpdateZetas(mu, Omega, logW);
     Z = Rcpp::as<uvec>(tempZ["Z"]);  
@@ -284,7 +348,8 @@ void MCMC::main_loop(Rcpp::List state)
       saveRho(km) = rho;
       saveK0(km) = k_0;
       saveEpsilon(km) = epsilon;
-      saveAlpha(km) = alpha;
+      saveAlpha(km, 0) = alpha_0;
+      saveAlpha(km, 1) = alpha_1;
       saveW.slice(km) = exp(logW); 
       saveOmega.slice(km) = reshape( mat(Omega.memptr(), Omega.n_elem, 1, false), p, K*p);  
       saveMu.slice(km) = reshape( mat(mu.memptr(), mu.n_elem, 1, false), J, K*p);   
@@ -301,7 +366,12 @@ void MCMC::main_loop(Rcpp::List state)
   
   cout << endl << "MH acceptance rate " << endl;
   cout << "epsilon: " << (double)epsilon_count/num_iter << endl;
-  cout << "alpha: " << alpha_count / (double)num_iter << endl << endl;
+  if (shared_alpha == true) {
+    cout << "alpha: " << alpha_count / (double)num_iter << endl << endl;
+  } else {
+    cout << "alpha_0: " << alpha_count_0 / (double)num_iter << endl;
+    cout << "alpha_1: " << alpha_count_1 / (double)num_iter << endl << endl;
+  }
   
 }     
 
@@ -485,6 +555,66 @@ double MCMC::UpdateAlpha(double alpha, arma::mat N, arma::uvec R, double alpha_p
   return output;
 }
 
+double MCMC::UpdateAlpha0(double alpha_0, arma::mat N, arma::uvec R, double alpha_par_0)
+{
+  uvec R0 = find(R==0);
+  int K_0 = R0.n_elem;
+
+  double output = alpha_0;    
+  double log_ratio = 0;
+  double temp = rgammaBayes(  pow( alpha_0, 2 ) * alpha_par_0, 
+                              alpha_0 * alpha_par_0 );                      
+  
+  log_ratio += R::dgamma(alpha_0, pow(temp,2)* alpha_par_0, 1/temp/alpha_par_0, 1);                          
+  log_ratio -= R::dgamma(temp, pow(alpha_0,2)* alpha_par_0, 1/alpha_0/alpha_par_0, 1);  
+  log_ratio += R::dgamma(temp, tau_alpha(0), 1/tau_alpha(1), 1);
+  log_ratio -= R::dgamma(alpha_0, tau_alpha(0), 1/tau_alpha(1), 1);
+  
+  if(K_0 > 0)
+  {
+    log_ratio += marginalLikeDirichlet( sum(N.cols(R0),0).t(), (temp/K_0)*ones<vec>(K_0)  );
+    log_ratio -= marginalLikeDirichlet( sum(N.cols(R0),0).t(), (alpha_0/K_0)*ones<vec>(K_0)  );
+  }
+  
+  
+  if( exp(log_ratio) > R::runif(0,1) )
+    output = temp;
+  
+  return output;
+}
+
+
+double MCMC::UpdateAlpha1(double alpha_1, arma::mat N, arma::uvec R, double alpha_par_1)
+{
+  uvec R1 = find(R==1);
+  int K_1 = R1.n_elem;  
+  
+  double output = alpha_1;    
+  double log_ratio = 0;
+  double temp = rgammaBayes(  pow( alpha_1, 2 ) * alpha_par_1, 
+                              alpha_1 * alpha_par_1 );                      
+  
+  log_ratio += R::dgamma(alpha_1, pow(temp,2)* alpha_par_1, 1/temp/alpha_par_1, 1);                          
+  log_ratio -= R::dgamma(temp, pow(alpha_1,2)* alpha_par_1, 1/alpha_1/alpha_par_1, 1);  
+  log_ratio += R::dgamma(temp, tau_alpha(0), 1/tau_alpha(1), 1);
+  log_ratio -= R::dgamma(alpha_1, tau_alpha(0), 1/tau_alpha(1), 1);
+  
+  if(K_1 > 0)
+  {
+    mat N1 = N.cols(R1);
+    for(int j = 0; j < J; j++)
+    {
+      log_ratio += marginalLikeDirichlet( N1.row(j).t(), (temp/K_1)*ones<vec>(K_1)  );
+      log_ratio -= marginalLikeDirichlet( N1.row(j).t(), (alpha_1/K_1)*ones<vec>(K_1)  );
+    }    
+  }
+  
+  if( exp(log_ratio) > R::runif(0,1) )
+    output = temp;
+  
+  return output;
+}
+
 
 
 double MCMC::updateRho( arma::mat N, arma::uvec R)
@@ -501,7 +631,8 @@ double MCMC::updateRho( arma::mat N, arma::uvec R)
 arma::mat MCMC::UpdateLogWs(   arma::mat N, 
                                arma::uvec R,
                                double rho,
-                               double alpha  )
+                               double alpha_0,
+                               double alpha_1)
 {
   
   mat logW(J,K);  
@@ -513,7 +644,7 @@ arma::mat MCMC::UpdateLogWs(   arma::mat N,
   
   if( K_0 > 0)
   {
-    vec pi0 = rDirichlet( sum(N.cols(R0),0).t() +  alpha * ones<vec>(K_0) / K_0  );
+    vec pi0 = rDirichlet( sum(N.cols(R0),0).t() +  alpha_0 * ones<vec>(K_0) / K_0  );
     mat N0 = N.cols(R0);
     for(int j=0; j<J; j++)
     {
@@ -529,7 +660,7 @@ arma::mat MCMC::UpdateLogWs(   arma::mat N,
     for(int j=0; j<J; j++)
     {
       jindex(0) = j;
-      logW.submat(jindex, R1) = rDirichlet( N1.row(j).t() +  alpha * ones<vec>(K_1) / K_1  ).t() + log(1.0 - rho);
+      logW.submat(jindex, R1) = rDirichlet( N1.row(j).t() +  alpha_1 * ones<vec>(K_1) / K_1  ).t() + log(1.0 - rho);
     }
       
   }
@@ -718,8 +849,8 @@ arma::vec MCMC::UpdateM1(   double k_0,
                             arma::mat mu_0, 
                             arma::cube Omega )
 {
-  mat precision = inv_S_2;
-  vec meanM = inv_S_2*m_2;
+  mat precision = inv_V_0;
+  vec meanM = inv_V_0*m_0;
   for(int k=0; k< K; k++)
   {
       precision += k_0*Omega.slice(k);
@@ -894,7 +1025,7 @@ Rcpp::List MCMC::PriorSMuSigma(   double varphi,
 
 
 
-arma::uvec MCMC::UpdateR(arma::uvec R, arma::mat N, double eta, double alpha)
+arma::uvec MCMC::UpdateR(arma::uvec R, arma::mat N, double eta, double alpha_0, double alpha_1)
 {
   // the code is written for even K
   vec u = randu(K/2);  
@@ -929,7 +1060,7 @@ arma::uvec MCMC::UpdateR(arma::uvec R, arma::mat N, double eta, double alpha)
           log_like(count) += log(eta);    
         else
           log_like(count) += log(1.0 - eta);  
-        log_like(count) += supportR(N, R_temp, eta, alpha);
+        log_like(count) += supportR(N, R_temp, eta, alpha_0, alpha_1);
         count++;
       }
     }    
@@ -1001,7 +1132,7 @@ arma::uvec MCMC::UpdateR(arma::uvec R, arma::mat N, double eta, double alpha)
   return R;
 }
 
-double MCMC::supportR(arma::mat N, arma::uvec R_temp, double eta, double alpha)
+double MCMC::supportR(arma::mat N, arma::uvec R_temp, double eta, double alpha_0, double alpha_1)
 {
   uvec R_temp_0, R_temp_1;
   int K_temp_0, K_temp_1;
@@ -1017,11 +1148,11 @@ double MCMC::supportR(arma::mat N, arma::uvec R_temp, double eta, double alpha)
   
   output = lgamma( tau_rho(0) + accu(N.cols(R_temp_0)) ) + lgamma(tau_rho(1) + accu(N.cols(R_temp_1)) );
   if( K_temp_0 > 0)
-    output += marginalLikeDirichlet(  sum(N_temp_0, 0).t(), (alpha/K_temp_0)*ones<vec>(K_temp_0) );
+    output += marginalLikeDirichlet(  sum(N_temp_0, 0).t(), (alpha_0/K_temp_0)*ones<vec>(K_temp_0) );
   if( K_temp_1 > 0)
   {
     for(int j = 0; j < J; j++)
-      output += marginalLikeDirichlet(  N_temp_1.row(j).t(), (alpha/K_temp_1)*ones<vec>(K_temp_1) );
+      output += marginalLikeDirichlet(  N_temp_1.row(j).t(), (alpha_1/K_temp_1)*ones<vec>(K_temp_1) );
   } 
   return output;
   
@@ -1029,7 +1160,7 @@ double MCMC::supportR(arma::mat N, arma::uvec R_temp, double eta, double alpha)
 
 
 
-arma::uvec MCMC::swap_step(arma::uvec R, arma::mat N, vec tau_rho, double alpha)
+arma::uvec MCMC::swap_step(arma::uvec R, arma::mat N, vec tau_rho, double alpha_0, double alpha_1)
 {
   uvec R_0 = find(R == 0);
   uvec R_1 = find(R == 1);
@@ -1056,15 +1187,15 @@ arma::uvec MCMC::swap_step(arma::uvec R, arma::mat N, vec tau_rho, double alpha)
   double numerator = marginalLikeDirichlet( counts_new, tau_rho );
   double denominator =  marginalLikeDirichlet( counts, tau_rho );
   
-  numerator += marginalLikeDirichlet( sum(N.cols(R_0_new),0).t(), alpha*ones<vec>(K_0)/K_0 );
-  denominator += marginalLikeDirichlet( sum(N.cols(R_0),0).t(), alpha*ones<vec>(K_0)/K_0 );
+  numerator += marginalLikeDirichlet( sum(N.cols(R_0_new),0).t(), alpha_0*ones<vec>(K_0)/K_0 );
+  denominator += marginalLikeDirichlet( sum(N.cols(R_0),0).t(), alpha_0*ones<vec>(K_0)/K_0 );
   
   mat N_1_new = N.cols(R_1_new);
   mat N_1 = N.cols(R_1);
   for(int j = 0; j < J; j++)
   {
-    numerator += marginalLikeDirichlet( N_1_new.row(j).t(), alpha*ones<vec>(K_1)/K_1 );
-    denominator += marginalLikeDirichlet( N_1.row(j).t(), alpha*ones<vec>(K_1)/K_1 );
+    numerator += marginalLikeDirichlet( N_1_new.row(j).t(), alpha_1*ones<vec>(K_1)/K_1 );
+    denominator += marginalLikeDirichlet( N_1.row(j).t(), alpha_1*ones<vec>(K_1)/K_1 );
   }
   
   double acceptance_log_prob = numerator - denominator;

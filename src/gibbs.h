@@ -27,9 +27,9 @@ class MCMC
   // Hyperparamter of the Inverse Wishart on Psi_1
   mat Psi_2; //  = eye<mat>(p,p);  
   // mean of the Normal prior on m_1
-  vec m_2; // (p);  m_2.zeros();    
+  vec m_0; // (p);  m_0.zeros();    
   // Covariance of the Normal prior on m_1
-  mat inv_S_2; // =  eye<mat>(p,p); S_2 = S_2/1000;   
+  mat inv_V_0; // =  eye<mat>(p,p); V_0 = V_0/1000;   
   // k_0 prior parameters
   vec tau_k0;  //  tau.fill(4);
   // alpha parameters
@@ -41,6 +41,7 @@ class MCMC
   vec tau_varphi; // (2)
   vec varphi_pm; // (2); varphi_0.fill(0);  
   bool merge_step;  // 
+  bool shared_alpha;
   double merge_par;
   // latent indicator initial values
   uvec Z_input; 
@@ -50,7 +51,7 @@ class MCMC
   int length_chain; 
   
   vec saveRho, saveK0, saveEpsilon, saveVarphi;
-  vec saveAlpha;
+  mat saveAlpha;
   cube saveW, saveMu, saveMu0, saveOmega;
   umat saveZ, saveS, saveR;
   
@@ -70,13 +71,24 @@ class MCMC
                      arma::mat N, 
                      arma::uvec R, 
                      double alpha_par);
+  
+  double UpdateAlpha1(double alpha_1, 
+                     arma::mat N, 
+                     arma::uvec R, 
+                     double alpha_par_1);
+  
+  double UpdateAlpha0(double alpha_0, 
+                     arma::mat N, 
+                     arma::uvec R, 
+                     double alpha_par_0);
     
   double updateRho( arma::mat N, arma::uvec R);
   
   arma::mat UpdateLogWs(   arma::mat N, 
                            arma::uvec R,
                            double rho,
-                           double alpha  );
+                           double alpha_0,
+                           double alpha_1);
                             
   Rcpp::List UpdateSMuSigma(  arma::uvec Z,
                               int k,  
@@ -114,13 +126,16 @@ class MCMC
                             double epsilon,
                             arma::vec m_1 ); 
                             
-  arma::uvec UpdateR(arma::uvec R, arma::mat N, double eta, double alpha);
-  double supportR(arma::mat N, arma::uvec R_temp, double eta, double alpha);
+  arma::uvec UpdateR(arma::uvec R, arma::mat N, double eta, double alpha_0,
+                     double alpha_1);
+  double supportR(arma::mat N, arma::uvec R_temp, double eta,double alpha_0,
+                  double alpha_1);
 
-    arma::uvec swap_step(   arma::uvec R, 
+    arma::uvec swap_step( arma::uvec R, 
                           arma::mat N, 
                           vec tau_rho, 
-                          double alpha);
+                          double alpha_0,
+                          double alpha_1);
 
                                         
 
