@@ -1,20 +1,16 @@
-Package: MRS
+Package: cremid
 Type: Package
-Title: Multi-Resolution Scanning for Cross-Sample Differences
-Version: 1.2.3
-Date: 2017-12-30
-Author: Jacopo Soriano and Li Ma
+Title: Closely Related Mixture Distributions
+Version: 1.0
+Date: 2015-03-10
+Author: Jacopo Soriano
 Maintainer: Jacopo Soriano <jsoriano.stat@gmail.com>
-Description: An implementation of the MRS algorithm for comparison across distributions,
-  as described in Jacopo Soriano, Li Ma (2016) <doi:10.1111/rssb.12180>. 
-  The model is based on a nonparametric process taking the form of a Markov model 
-  that transitions between a "null" and an "alternative" state 
-  on a multi-resolution partition tree of the sample space. 
-  MRS effectively detects and characterizes a variety of underlying differences. 
-  These differences can be visualized using several plotting functions.
+Description: Bayesian model for comparison accross mixtures of closely related mixture of
+    Gaussians. This allorach models variations in the mixture weights and in the
+    mixture locations across the mixture models.
 License: GPL (>= 3)
-Imports: Rcpp (>= 0.11.0), igraph
-Suggests: KernSmooth
+Imports:
+    Rcpp (>= 0.11.2),
+    RcppArmadillo (>= 0.4.400.0)
 LinkingTo: Rcpp, RcppArmadillo
-NeedsCompilation: yes
-
+RoxygenNote: 6.0.1

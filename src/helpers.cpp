@@ -1,27 +1,17 @@
-
 #include <RcppArmadillo.h>
-#include "helpers.h" 
-
-
 
 using namespace Rcpp;
 using namespace arma;
-using namespace std;
+
+
 
 
 const double log2pi = std::log(2.0 * M_PI);
-const int one_seq_bin = 2047;   // 11111111111 in binary
 
 double log_exp_x_plus_exp_y(double x, double y) 
 {
   double result;
-  if( ( std::isinf( fabs(x) ) == 1 ) && ( std::isinf( fabs(y) ) == 0 )  )
-    result = y;
-  else if ( ( std::isinf( fabs(x) ) == 0 ) && ( std::isinf( fabs(y) ) == 1 )  )
-    result = x;
-  else if ( ( std::isinf( fabs(x) ) == 1 ) && ( std::isinf( fabs(y) ) == 1 )  )
-    result = x;
-  else if ( x - y >= 100 ) result = x;
+  if ( x - y >= 100 ) result = x;
   else if ( x - y <= -100 ) result = y;
   else {
     if (x > y) {
@@ -32,306 +22,143 @@ double log_exp_x_plus_exp_y(double x, double y)
   return result;
 }
 
-unsigned long pow2(int k) 
+
+arma::mat mvrnormArma(int n, arma::vec mu, arma::mat sigma) 
 {
-  unsigned long res = (unsigned long) 1 << k;
-  return res;
+  int ncols = sigma.n_cols;
+  arma::mat Y = arma::randn(n, ncols);
+  return arma::repmat(mu, 1, n).t() + Y * arma::chol(sigma);
 }
 
-unsigned int convert_to_inverse_base_2(double x, int k)
+arma::mat rWishartArma(arma::mat Sigma, int df)
 {
-  unsigned int x_base_2 = (unsigned int) floor (x * pow2(k) );
-  unsigned int x_base_inverse_2 = 0;
-
-  for (int i = 0; i < k; i++) 
-  {
-      x_base_inverse_2 |= ((x_base_2 >> (k - 1 -i)) & 1) << i;
-  }
-
-  return x_base_inverse_2;
+  int p = Sigma.n_rows;
+  vec m(p); m.zeros();
+  mat X = mvrnormArma(df, m, Sigma );
+  return X.t()*X;
 }
 
-unsigned long int Choose(int n, int k) 
-{
-    unsigned long int c = 1;
-    unsigned long int d = 1;
-    for (int i = 0; i <k; i++) 
-    {
-        c *= (n-i); d *= (i+1);
-    }
-    return c  / d;
-}
-
-INDEX_TYPE init_index(int level) 
-{   
-    INDEX_TYPE init;
-    for (int i=0; i < level; i++) {init.var[i] = i+1;}    
-    for (int i=level; i <= MAXVAR; i++) {init.var[i] = 0;}    
-    return init;
-}
-
-unsigned long int get_node_index(INDEX_TYPE& I, int level, int dim)
-{
-  unsigned long  r = 0;
-  unsigned long numerator = 1;
-  unsigned long denominator = 1;
+arma::vec dmvnrm_arma_precision(  arma::mat x,  
+                                  arma::rowvec mean,  
+                                  arma::mat omega, 
+                                  bool logd = true) { 
+  int n = x.n_rows;
+  int xdim = x.n_cols;
+  arma::vec out(n);
+  arma::mat rooti = trimatu(arma::chol(omega));
+  double rootisum = arma::sum(log(rooti.diag()));
+  double constants = -(static_cast<double>(xdim)/2.0) * log2pi;
   
-  for (int i = 0; i < level; i++) 
-  {
-    numerator = 1;
-    denominator *= (i+1);     
-    for (int j = 1; j <= i+1; j++) 
-      numerator *= I.var[i]-j;
-    
-    r += numerator / denominator;   
-  }
-  return dim*(r*pow2(level) + (unsigned long) I.var[MAXVAR]);
-    
-}
-
-
-std::pair<bool, INDEX_TYPE> make_parent_index( INDEX_TYPE& I, 
-                                          unsigned short part_dim, 
-                                          int level, 
-                                          unsigned short which )
-{
-    INDEX_TYPE parent_index = I;
-    INDEX_TYPE child_index = I;
-    unsigned short data = part_dim+1; 
-    int i = 0;
-    int j = 0;
-    int x_curr;
-    int parent_index_var_prev;
-    bool first_time = true;
-    bool parent_exists = true;
-    
-    if (level == 0) 
-      parent_exists = false;
-    else
-    {
-      i = 0;
-      x_curr = parent_index.var[i]; // current dimension
-      parent_index_var_prev = x_curr - 1;
-    }
-    
-    if(x_curr != data)
-    {
-      while (parent_index.var[i] > 0 && data > x_curr ) 
-      {
-        x_curr += parent_index.var[i] - parent_index_var_prev - 1;
-        parent_index_var_prev = parent_index.var[i];
-        i++;
-      }
-      i = i - 1;
-    }
-
-    if ( data != x_curr ) 
-      parent_exists = false;
-    else
-    {
-      while( parent_index.var[i] > 0 )
-      {
-        i++;
-        x_curr += parent_index.var[i] - parent_index_var_prev - 1;
-        parent_index_var_prev = parent_index.var[i];
-        if( parent_index_var_prev == 0 )
-          parent_index.var[i - 1] = 0;
-        else if( x_curr > data )  
-          parent_index.var[i - 1] = parent_index.var[i] - 1;
-          
-        if( first_time && parent_index.var[i-1]!= child_index.var[i-1])
-        {
-          j = i - 1;
-          first_time = false;
-        }
-      }
-      
-    
-      if( ( ( parent_index.var[MAXVAR] >> j) & (unsigned short)1 ) != (unsigned short)which )
-        parent_exists = false;
-      else {
-        parent_index.var[MAXVAR] = 
-          ( I.var[MAXVAR] & ~(one_seq_bin << j ) ) | 
-          ((I.var[MAXVAR] >> 1) & (one_seq_bin << j ));            
-      }
-          
-    }
-
-    return std::make_pair(parent_exists, parent_index);
-
-}
-
-
-INDEX_TYPE make_child_index(  INDEX_TYPE& I, 
-                              unsigned short part_dim, 
-                              int level, 
-                              unsigned short which) {
-    INDEX_TYPE child_index = I;
-    unsigned short data = part_dim+1; 
-    int i;
-    int j;
-    int x_curr;
-    int child_index_var_prev;
-
-    if (level == 0) 
-    {
-      x_curr=1;
-      i=0;
-      child_index_var_prev = 0;
-    }
-    else 
-    {
-       x_curr = child_index.var[0]; // current dimension
-       child_index_var_prev = child_index.var[0];
-       i = 1;
-    }
-
-    while (i<MAXVAR) 
-    {
-        while (child_index.var[i] >0 && data >= x_curr ) 
-        {
-          x_curr += child_index.var[i] - child_index_var_prev - 1;
-	        child_index_var_prev = child_index.var[i];
-	        i++;
-        }
-
-        if (child_index.var[i] == 0 && data >= x_curr) 
-        {
-	        child_index.var[i] = data - x_curr + 1 + child_index_var_prev;
-	        j=i;
-	        i=MAXVAR;
-        } 
-        else 
-        { // this corresponds to the first i such that data < x_curr
-	        for (int h = level; h >= i; h--) 
-          {
-	            child_index.var[h] = child_index.var[h-1]+1;
-	        }
-	    
-    	    child_index.var[i-1] = child_index.var[i] - (x_curr - data + 1); 	    
-	        j=i-1; 
-	        i=MAXVAR;
-	    }
-    }
-    // update the bits of the child
-    child_index.var[MAXVAR] = 
-        ((I.var[MAXVAR] << 1) & (one_seq_bin << (j+1) )) | 
-        ((unsigned short) which << j) | 
-        ( I.var[MAXVAR] & ~(one_seq_bin << j) );
-
-    return child_index;
-}
-
-
-
-int sum_elem(int *  my_array , int num_elem)
-{
-  int output = 0;
-  for(int i=0; i < num_elem; i++)
-  {
-    output += my_array[i];
-  }
-  return output;
-}
-
-
-INDEX_TYPE get_next_node(INDEX_TYPE& I, int p, int level) 
-{
-    INDEX_TYPE node = I;
-    int i = level-1; int j = p + level -2;
-    while (i>=0 && node.var[i] == j+1) {i--;j--;}
-    if (i < 0) 
-    { //reach the end of nodes
-        for (int h = 0; h <= MAXVAR; h++) 
-        {
-          node.var[h]=0; //invalid node
-        }
-    } 
-    else 
-    {
-        node.var[i] += 1;
-        for (j=i+1;j<level;j++) 
-        {
-            node.var[j] = node.var[i]+ j-i;
-        }
-    }
-    node.var[MAXVAR] = 0;
-
-    return node;
-}
-
-
-
-
-arma::vec newtonMethod(arma::vec data_0, arma::vec data_1, double nu, double alpha)
-{
-  vec output(2);
-  int N = data_0.n_elem;
-  double theta0 = exp( log(sum(data_0) + alpha) - log( sum(data_0) + sum(data_1) + 2*alpha ) );
-  double theta1;
-  double tolerance = 10E-7;
-  double epsilon = 10E-14;
-  int maxIter = 20;
-  bool foundSol = false;
-  double yprime, ysecond;
-  double y;
+  for (int i=0; i < n; i++) {
+    arma::vec z = rooti * arma::trans( x.row(i) - mean) ;    
+    out(i)      = constants - 0.5 * arma::sum(z%z) + rootisum;     
+  }  
   
-  for(int i = 0; i < maxIter; i++ )
-  {
-    // evaluate first and second derivative at theta0
-    yprime = (alpha - 1.0) / theta0  - (alpha - 1.0) / ( 1.0 - theta0);    
-    ysecond = -(alpha - 1.0) / pow(theta0, 2.0)  - (alpha - 1.0) / pow( 1.0 - theta0, 2.0);
-    y = (alpha - 1.0) * log(theta0) + (alpha - 1.0) * log(1.0 - theta0);
-    for(int j = 0; j < N; j++)
-    {
-      yprime += (nu * ( R::digamma( nu*theta0 + data_0(j) ) -  R::digamma( nu*(1.0 - theta0) + data_1(j) ) ) );
-      ysecond += ( pow(nu,2.0) * ( R::trigamma( nu*theta0 + data_0(j) ) +  R::trigamma( nu*(1.0 - theta0) + data_1(j) ) ) );
-      y += R::lbeta(nu*theta0 + data_0(j), nu*(1.0 - theta0) + data_1(j) );
-    }
-    yprime -= ( N * nu * ( R::digamma( nu*theta0 ) -  R::digamma( nu*(1.0 - theta0) ) ) );
-    ysecond -= ( N * pow(nu,2.0) * ( R::trigamma( nu*theta0 ) +  R::trigamma( nu*(1.0 - theta0) ) ) );
-    y -= N * R::lbeta( nu*theta0, nu*(1.0 - theta0) );
-    y -= R::lbeta(alpha, alpha);
-    // cout << "theta = " << theta0 << ", h(theta) = " << y << ", h'(theta) = " << yprime << ", h''(theta) = " << ysecond; 
-    // cout << ", m = " << y + 0.5 * log( 2.0 * M_PI ) - 0.5*log( fabs(ysecond) ) << endl;
-    if( fabs(ysecond) < epsilon )
-      i = maxIter;
-    else
-    {
-      theta1 = theta0 - yprime / ysecond;
-      if( log( fabs(theta1 - theta0) ) - log( fabs(theta1)  ) < log(tolerance)  )
-      {
-        foundSol = true;
-        i = maxIter;
-        theta0 = theta1;
-      }
-      else
-        theta0 = theta1;
-    }
+  if (logd == false) {
+    out = exp(out);
   }
-  /*
-  if(!foundSol)
-     cout << "convergence issue with Newton's method" << endl;
-  */
-  output(0) = theta0;
-  output(1) = y + 0.5 * log( 2.0 * M_PI ) - 0.5*log( fabs(ysecond) );
-  return output;
+  return(out);
 }
- 
 
 
 
-
-double eval_h(double theta0, arma::vec data_0, arma::vec data_1, double nu, double alpha)
+double rgammaBayes(double shape, double rate) 
 {
-  int N = data_0.n_elem;
-  double y = (alpha - 1.0) * log(theta0) + (alpha - 1.0) * log(1.0 - theta0);
-  y -= R::lbeta(alpha, alpha);  
-  for(int j = 0; j < N; j++)
-    y += R::lbeta(nu*theta0 + data_0(j), nu*(1.0 - theta0) + data_1(j) );
-  y -= N * R::lbeta( nu*theta0, nu*(1.0 - theta0) );  
-  return y;
+  return rgamma(1, shape, 1.0/rate )(0);
 }
 
 
 
+
+double beta_fun(arma::vec alpha, bool logB = true)
+{
+  double output = - lgamma(sum(alpha));
+  int J = alpha.n_elem;
+  
+  for(int j=0; j<J; j++)
+    output += lgamma(alpha(j));
+  if(logB)
+    return output;
+  else
+    return exp(output);
+}
+
+
+
+double marginalLikeDirichlet(arma::vec data, arma::vec alpha, bool logM = true)
+{
+  double output = beta_fun( alpha + data ) - beta_fun( alpha );
+  if(logM)
+    return output;
+  else
+    return exp(output);
+}
+
+
+arma::vec rDirichlet(arma::vec alpha, bool logR = true)
+{
+  int n = alpha.n_elem;
+  vec output(n);
+  for(int i=0; i<n; i++)
+    output(i) = rgamma(1,alpha(i),1)(0);
+  if(logR)  
+    return ( log( output) - log(sum(output) ) );
+  else
+    return exp( log( output) - log(sum(output) ) );
+}
+
+
+double dGeneralizedBeta(double x, double a, double b, arma::vec extremes, bool logD = true  )
+{
+  vec alpha(2); alpha(0) = a; alpha(1) = b;
+  double output = - beta_fun(alpha) - (sum(alpha) - 1)*log( extremes(1) - extremes(0) ) + 
+    (alpha(0)-1)*log( x-extremes(0) ) + (alpha(1)-1)*log( extremes(1) - x );
+    
+  if(logD)
+    return output;
+  else
+    return exp(output);
+}
+
+
+int sampling(vec probs)
+{  
+  int Kf = probs.n_elem;
+  int v;
+  Rcpp::NumericVector probsum(Kf);
+  double x = R::runif(0.0, sum(probs));
+  probsum(0)=probs(0);
+  for(int k = 1; k < Kf; k++)
+  {  probsum(k)=probs(k)+probsum(k-1);
+  }
+  if(x < probsum(0)){ v=0;}
+  for (int k = 0; k < (Kf-1); k++)
+  {  if(x > probsum(k)){ if(x< probsum(k+1)){v=k+1;} }
+  }
+  if(x > probsum(Kf-1)){v=Kf-1;}
+    return v;
+}
+
+
+
+
+double KL(  arma::vec mu_1, 
+            arma::vec mu_2, 
+            arma::mat Sigma_1, 
+            arma::mat Omega_1, 
+            arma::mat Sigma_2, 
+            arma::mat Omega_2)
+{
+  double output;
+  int p = mu_1.n_elem;
+  double val_1, val_2;
+  double sign_1, sign_2;
+
+  log_det(val_1, sign_1, Sigma_1);
+  log_det(val_2, sign_2, Sigma_2);
+  mat mu(p,1); 
+  mu.col(0) = (mu_1 - mu_2);
+  output = trace( Omega_1 * Sigma_2) + as_scalar( mu.t() * Omega_1 * mu ) - p + val_1 - val_2;
+  return (output/2.0);
+    
+}
